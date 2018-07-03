@@ -1,8 +1,8 @@
 ---
 title: Asymmetric Manifest Based Integrity
 abbrev: AMBI
-docname: draft-jholland-mboned-ambi-00
-date: 2018-06-29
+docname: draft-jholland-mboned-ambi-01
+date: 2018-07-02
 category: exp
 
 ipr: trust200902
@@ -664,14 +664,22 @@ module ietf-ambi-anchor {
 ###Overview
 
 A manifest cannot be interpreted except in context of a
-known anchor message. In order for a manifest to be
-considered as potentially authenticating a set of packets, the
-anchor version MUST match the value in a known unexpired
-anchor message, and the hash MUST match the hash of the
+known anchor message.
+
+In order for a manifest to be considered as potentially
+authenticating a set of packets, the
+Anchor Version MUST match the value in a known unexpired
+anchor message, and the Anchor Hash MUST match the hash of the
 contents of that anchor message, according to the 
 /anchor/self/hash_algorithm and /anchor/self/hash_bits
 fields, in order for a manifest to be accepted for use as
 evidence of authenticity and integrity.
+
+A manifest also MUST NOT be accepted unless it has verified
+authenticity and integrity, either because it contains a
+cryptographic signature, or because it appeared in a secured
+unicast stream, or because another verified manifest has provided
+the packet hash for a packet containing this manifest.
 
 ###Manifest Layout {#manifest-layout}
 
@@ -679,9 +687,9 @@ evidence of authenticity and integrity.
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-| Ver=0 |     Reserved=0      |S|       Anchor Version          |
+| Ver=0 |     Reserved=0    |P|S|       Anchor Version          |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|    Anchor Hash (variable length, 4-byte aligned, 0-padded)    |
+|   Anchor Hash (variable length, 4-octet aligned, 0-padded)    |
 |                             ...                               |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |            Key ID             |         Manifest ID           |
@@ -702,6 +710,101 @@ evidence of authenticity and integrity.
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ~~~
 
+####Ver (Protocol Version):
+  MUST be set to 0 by senders, and if a nonzero value is received
+  this message MUST NOT be accepted or processed as a manifest.
+
+  For manifests streams which were authenticated by a means other
+  than cryptographic signature, it is RECOMMENDED that authenticators
+  stop following this manifest stream and refresh the anchor if
+  they receive an invalid version.
+
+  For manifest streams authenticated by signature, it is
+  RECOMMENDED that authenticators remain joined to this stream
+  and ignore this packet, as the manifest MAY have been sent
+  maliciously.
+
+  An authenticator MAY implement a rate limit on
+  invalid manifests and drop the stream if the rate is exceeded.
+
+####Reserved:
+  MUST be set to 0 by senders and MUST be ignored by receivers.
+
+####P ("Purge" bit):
+  If this bit is 1, the anchor message this manifest specifies
+  MUST be purged by authenticators who accept this manifest, so that
+  it cannot be used to authenticate future manifests unless it
+  was re-fetched.
+
+####S ("Step" bit):
+  If this bit is 1, the "Packet Identifier Step" field is present
+  in this manifest, else it is not.
+
+####Anchor Version:
+  The value from the "/anchor/self/version" field in the anchor
+  message. If no unexpired anchor message with this version is
+  known to the authenticator, this manifest MUST NOT be accepted.
+
+####Anchor Hash:
+  The hash of the anchor message, using the algorithm indicated by the
+  "/anchor/self/hash_algorithm" field, using the first bits from the
+  hash up to the number of bits indicated by the
+  "/anchor/self/hash_bits" field in the anchor message.
+
+  If the hash of an anchor message with this version does not match the bits
+  in this field, this manifest MUST NOT be accepted.
+
+  This field is padded at the end with 0-bits until the end is 4-octet aligned.
+
+####Key ID:
+  If this is 0, this manifest does not contain the "Cryptographic Signature"
+  field.
+
+  If this is nonzero, it is interpreted as an unsigned 16-bit integer,
+  and the manifest MUST NOT be accepted unless the "Cryptographic Signature"
+  field contains a signature corresponding to the information from the
+  "/anchor/public_key" object in the anchor message with an id field matching
+  this value.
+
+####Manifest ID:
+  The value from "/anchor/manifest_stream/id" in the anchor message
+  corresponding to the manifest stream this manifest is a part of.
+
+####First Packet Hash Identifier:
+  The packet number corresponding to the first packet hash that's contained
+  in this manifest. This refers to a value in a data packet described by
+  the "/anchor/manifest_stream/sequence_type" field for this manifest
+  stream.
+
+####Packet Identifier Step:
+  If the "S bit" is 0, this field is not present in the manifest.
+
+  If the "S bit" is 1, this field is repeatedly added to the First Packet
+  Hash Identifier using 32-bit signed arithmetic to determine the packet
+  number of subsequent hashes.
+
+####Packet Hash Count:
+  The number of hashes contained in the Packet Hashes section.
+
+####Cryptographic Signature:
+  If the "Key ID" field is 0, this field is not present.
+
+  If the "Key ID" field is nonzero, this manifest MUST NOT be accepted
+  unless this field contains the correct signature produced by signing the
+  manifest with the private key that can be verified by the "/anchor/public_key"
+  object in the anchor message, according to the algorithm specified in the
+  "algorithm" field with an "id" field equal to the "Key ID" field of this
+  manifest, with length equal to the "signature_bits" field, padded at
+  the end with 0 until 4-octet aligned.
+
+####Packet Hashes:
+  Concatenated Hashes of the data packets authenticated by this manifest. The hash
+  covers the IP payload of the packet, it is calculated with the algorithm
+  indicated by the "/anchor/manifest_stream" object from the anchor message,
+  with an "id" field matching the "Manifest ID" field, with the algorithm and
+  number of bits equal to the "hash_algorithm" and "hash_bits"field from that
+  object. The hashes are concatenated without padding, except the last octet
+  is padded with 0 if necessary.
 
 #IANA Considerations {#iana}
 
@@ -737,6 +840,8 @@ including a sequence number and then hitting a match
 TBD: DNSSEC vis-a-vis anchor url discovery.
 (we need a diagram about for middle-box handling of a revers-path propagated join?)
 Explain why malicious DNS could deny service, but cannot cause accepting attack packets.
+
+TBD: Is the purge bit sufficient to cover when a key is found to be leaked?
 
 TBD: follow the rest of the guidelines: https://tools.ietf.org/html/rfc3552
 

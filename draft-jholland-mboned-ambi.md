@@ -1,8 +1,8 @@
 ---
 title: Asymmetric Manifest Based Integrity
 abbrev: AMBI
-docname: draft-jholland-mboned-ambi-01
-date: 2018-07-02
+docname: draft-jholland-mboned-ambi-02
+date: 2019-04-26
 category: exp
 
 ipr: trust200902
@@ -32,8 +32,10 @@ author:
     email: krose@krose.org
 
 normative:
+  RFC1035:
   RFC2119:
   RFC3550:
+  RFC3596:
   RFC3711:
   I-D.ietf-tsvwg-udp-options:
 
@@ -57,90 +59,96 @@ informative:
 
 --- abstract
 
-This document introduces Asymmetric Manifest-Based Integrity (AMBI). AMBI allows each receiver of a stream of multicast packets to check the integrity of the contents of each packet in the data stream. AMBI operates by passing cryptographically verifiable manifests for the data packets, over out-of-band communication channels.
+This document defines Asymmetric Manifest-Based Integrity (AMBI). AMBI allows
+each receiver of a stream of multicast packets to check the integrity of the
+contents of each packet in the data stream. AMBI operates by passing
+cryptographically verifiable manifests for the data packets, over out-of-band
+communication channels.
 
 --- middle
 
 #Introduction        {#problems}
 
-Multicast transport poses security problems that are not
-easily addressed by the same security mechanisms used for unicast
-transport.
+Multicast transport poses security problems that are not easily addressed by
+the same security mechanisms used for unicast transport.
 
-The "Introduction" sections of the documents describing
-TESLA {{RFC4082}}, and TESLA in SRTP {{RFC4383}}, and TESLA with
-ALC and NORM {{RFC5776}} present excellent overviews of the
-challenges unique to multicast authentication, briefly summarized here:
+The "Introduction" sections of the documents describing TESLA {{RFC4082}},
+and TESLA in SRTP {{RFC4383}}, and TESLA with ALC and NORM {{RFC5776}}
+present excellent overviews of the challenges unique to multicast
+authentication, briefly summarized here:
 
- * A MAC based on a symmetric shared secret cannot be used because each packet has multiple receivers that do not trust each other.
- * Asymmetric per-packet signatures can handle only very low bit-rates because of the computational overhead.
- * An asymmetric signature of a larger message comprising multiple packets requires reliable receipt of all such packets, something that cannot be guaranteed in a timely manner even for protocols that do provide reliable delivery, and the retransmission of which may anyway exceed the useful lifetime for data formats that can otherwise tolerate some degree of loss.
+ * A MAC based on a symmetric shared secret cannot be used because each
+   packet has multiple receivers that do not trust each other.
+ * Asymmetric per-packet signatures can handle only very low bit-rates
+   because of the computational overhead.
+ * An asymmetric signature of a larger message comprising multiple packets
+   requires reliable receipt of all such packets, something that cannot be
+   guaranteed in a timely manner even for protocols that do provide reliable
+   delivery, and the retransmission of which may anyway exceed the useful
+   lifetime for data formats that can otherwise tolerate some degree of loss.
 
-Aymmetric Manifest-Based Integrity (AMBI) specifies a method
-for receivers or middle boxes to cryptographically authenticate
-and verify the integrity of a stream of packets, by communicating
-packet "manifests" (described in {{manifests}}) via
-an out-of-band communication channel that provides authentication
-and verifiable integrity.
+Aymmetric Manifest-Based Integrity (AMBI) specifies a method for receivers or
+middle boxes to cryptographically authenticate and verify the integrity of a
+stream of packets, by communicating packet "manifests" (described in
+{{manifests}}) via an out-of-band communication channel that provides
+authentication and verifiable integrity.
 
-Each manifest contains cryptographic hashes of packet payloads
-corresponding to specific packets in the authenticated data stream.
+Each manifest contains cryptographic hashes of packet payloads corresponding
+to specific packets in the authenticated data stream.
 
-Three ways to authenticate a manifest are defined:
+Each manifest MUST be delivered in a manner that provides cryptographic
+integrity of the manifest.  For example, TLS or IPSec may be used to deliver
+a stream of manifests with unicast from a trusted sender to many receivers,
+or another mechanism that provides authentication for a multicast stream,
+such as a protocol which signs each packet, could be used to provide
+authentication for the manifests.
 
- * Asymmetric signature of a message containing the manifest.
- * Authenticated unicast stream providing a sequence of manifests.
- * Using one of the prior two constructions to bootstrap a root manifest containing authentication information for further manifests. This we term "recursive authentication".
+Upon successful verification of the contents of a manifest and receipt of any
+subset of the corresponding data packets, the receiver has proof of the
+integrity of the contents of the data packets listed in the manifest.
 
-When using asymmetric signatures, recursive authentication
-allows the sender to amortize the computational overhead for a
-single asymmetric signature across enough data packets to sustain
-high data rates. When using a secure unicast stream, the recursive
-verification allows for scaling the authenticated data stream to
-more receivers than can otherwise be sustained with a limited
-set of trusted servers.
-
-Upon successful verification of the contents of a manifest and
-receipt of any subset of the corresponding data packets, the
-receiver has proof of the integrity of the contents of the data
-packets listed in the manifest.
-
-An "anchor message", described in {{anchor-message}},
-provides the link between an authenticated data stream and the
-out-of-band channel of manifests that authenticates it.
+An "anchor message", described in {{anchor-message}}, provides the link
+between an authenticated data stream and the out-of-band channel of manifests
+that authenticates it.  This document defines a DNS-based method for a
+sender to advertise a URI that can be used to retrieve the anchor message
+over a secure transport.  The anchor message MAY also be provided by other
+out-of-band mechanisms that provide integrity guarantees for the anchor
+message.  Describing alternate methods is out of scope for this document.
 
 Authenticating the integrity of the data packets depends on:
 
- * authentication of the anchor message that provides the linkage between the manifest channel and the data stream; and
- * the secrecy and cryptographic strength of private keys used for signing manifests, or the authentication of the secure unicast streams used for transmitting manifests; and
+ * authentication of the anchor message that provides the linkage between the
+   manifest channel and the data stream; and
+ * the secrecy and cryptographic strength of private keys used for signing
+   manifests, or the authentication of the secure channels used for transmitting
+   manifests; and
  * the difficulty of generating a collision for the packet hashes in the manifest.
 
 ##Comparison with TESLA
 
-AMBI and TESLA {{RFC4082}} and {{RFC5776}} attempt to achieve a
-similar goal of authenticating the integrity of
-streams of multicast packets. AMBI imposes a higher overhead, as measured in the amount of extra data required, than TESLA imposes. In exchange, AMBI provides non-repudiation (which TESLA does
-not), and relaxes the requirement for establishing an upper
-bound on clock synchronization between sender and receiver.
+AMBI and TESLA {{RFC4082}} and {{RFC5776}} attempt to achieve a similar goal
+of authenticating the integrity of streams of multicast packets.  AMBI imposes
+a higher overhead, as measured in the amount of extra data required, than
+TESLA imposes.  In exchange, AMBI provides non-repudiation (which TESLA does
+not), and relaxes the requirement for establishing an upper bound on clock
+synchronization between sender and receiver.
 
-This tradeoff enables new capabilities for AMBI, relative to TESLA.
-In particular, when receiving multicast traffic from
-an untrusted transit network, AMBI can be used by a middle
-box to authenticate packets from a trusted source before
-forwarding traffic through the network, and the receiver also can
-separately authenticate the packets. (This use case is
-not possible with TESLA because the data packets can't be authenticated
-until a key is disclosed, so either the middlebox has to
-forward data packets without first authenticating so that the receiver
-has them prior to key disclosure, or the middlebox has to hold
-packets until the key is disclosed, at which point the receiver can
-no longer establish their authenticity.)
+This tradeoff enables new capabilities for AMBI, relative to TESLA.  In
+particular, when receiving multicast traffic from an untrusted transit
+network, AMBI can be used by a middle box to authenticate packets from a
+trusted source before forwarding traffic through the network, and the
+receiver also can separately authenticate the packets. (This use case is not
+possible with TESLA because the data packets can't be authenticated until a
+key is disclosed, so either the middlebox has to forward data packets without
+first authenticating so that the receiver has them prior to key disclosure,
+or the middlebox has to hold packets until the key is disclosed, at which
+point the receiver can no longer establish their authenticity.)
 
 ##Terminology
 
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
-"SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in
-this document are to be interpreted as described in {{RFC2119}}.
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD",
+"SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be
+interpreted as described in {{RFC2119}}.
 
 #Protocol Specification
 
@@ -148,50 +156,43 @@ this document are to be interpreted as described in {{RFC2119}}.
 
 ###Overview
 
-Packet identifiers are a sequence number contained within the
-authenticated payload of the packet. This sequence number is
-used inside a manifest to associate each packet hash with a
-specific packet. Each authenticated packet MUST contain a
-packet identifier. See {{sec-packet-identifiers}}
-for a discussion of the security implications.
+Packet identifiers are a sequence number contained within the authenticated
+payload of the packet. This sequence number is used inside a manifest to
+associate each packet hash with a specific packet. Each authenticated packet
+MUST contain a packet identifier. See {{sec-packet-identifiers}} for a
+discussion of the security implications.
 
-This document defines a new UDP option in
-{{packet-id-udp}} for use as a packet identifier.
+This document defines a new UDP option in {{packet-id-udp}} for use as a
+packet identifier.
 
-Some multicast-capable transport protocols have a sequence
-number embedded in data packets in the protocol. The sequence
-numbers in these protocols MAY be used instead of the new UDP
-option, to avoid introducing extra overhead in the
-authenticated data packets.
+Some multicast-capable transport protocols have a sequence number embedded in
+data packets in the protocol. The sequence numbers in these protocols MAY be
+used instead of the new UDP option, to avoid introducing extra overhead in
+the authenticated data packets.
 
-In {{packet-id-rtp}}, {{packet-id-srtp}}, and
-{{packet-id-udp}}, this document defines
-some sample ways to specify packet identifiers based on
-such sequence numbers embedded in existing protocols.
+In {{packet-id-rtp}}, {{packet-id-srtp}}, and {{packet-id-udp}}, this
+document defines some sample ways to specify packet identifiers based on such
+sequence numbers embedded in existing protocols.
 
-Other appropriate sequence number systems may exist, such as the
-anti-replay Sequence Number field in Section 3.1 of
-{{RFC6584}}, when NORM or FLUTE
-operates with an authentication profile that uses it (however,
-since that example already provides authentication, it is not
-added as an option in this document). The AMBI anchor message
-format can be extended in future documents to support those or
-other suitable schemes by adding values to the registry defined
-in {{iana}}.
+Other appropriate sequence number systems may exist, such as the anti-replay
+Sequence Number field in Section 3.1 of {{RFC6584}}, when NORM or FLUTE
+operates with an authentication profile that uses it (however, since that
+example already provides authentication, it is not added as an option in this
+document). The AMBI anchor message format can be extended in future documents
+to support those or other suitable schemes by adding values to the registry
+defined in {{iana}}.
 
-In some deployments, in contrast to using the new UDP option,
-the approach of using an existing sequence number may carry a
-benefit because it requires no change to the stream of packets
-being authenticated, possibly enabling interoperability with
-legacy receivers.
+In some deployments, in contrast to using the new UDP option, the approach of
+using an existing sequence number may carry a benefit because it requires no
+change to the stream of packets being authenticated, enabling
+interoperability with existing unmodified sending and receiving applications.
 
 ###RTP Sequence Number {#packet-id-rtp}
 
-Sequence number from Section 5.1 of
-{{RFC3550}}.
+Sequence number from Section 5.1 of {{RFC3550}}.
 
-TBD: discussion of security consequences of using 16 bits--
-recommend a bigger hash in manifests for this case?
+TBD: discussion of security consequences of using 16 bits--recommend a
+bigger hash in manifests for this case?
 
 ###SRTP Sequence Number {#packet-id-srtp}
 
@@ -215,40 +216,42 @@ Define a new UDP option {{I-D.ietf-tsvwg-udp-options}} (TBD2).
 
 ###Overview
 
-An anchor message provides the information that makes it possible
-to associate the manifests with the data packets they
-authenticate. ID values that appear as text integers in the
-anchor message also appear in the manifest binary data, with
-the anchor message providing context on how to interpret the
-values.
+An anchor message provides the information that makes it possible to
+associate the manifests with the data packets they authenticate. ID values
+that appear as text integers in the anchor message also appear in the
+manifest binary data, with the anchor message providing context on how to
+interpret the values.
 
-An anchor message MAY be discovered and transmitted by any
-means which provides adequate source authentication and data
-integrity to meet the security needs of the receiver.
+An anchor message MAY be discovered and transmitted by any means which
+provides adequate source authentication and data integrity to meet the
+security needs of the receiver.
 
-In order to support middle-box authentication, it is
-RECOMMENDED that senders arrange to distribute anchor
-messages according to the method outlined in
+In order to support middle-box authentication, it is RECOMMENDED that senders
+arrange to distribute anchor messages according to the method outlined in
 {{anchor-bootstrap}}.
 
 ###DNS-based Anchor URI Bootstrap {#anchor-bootstrap}
 
-When a middle box tries to process a join for a specific source,
-if it is configured to perform authentication on SSM multicast
-channels it can forward, it SHOULD make a DNS request for
-ambi.(reverse-source-ip).ip6.arpa or
-ambi.(reverse-source-ip).in-addr.arpa, for IPv6 or IPv4 source
-addresses.
+This document defines a new DNS resource record (RR) to communicate a URI for
+an AMBI anchor message to remote receivers of the sender's traffic, so they
+can use it to authenticate traffic from the sender.
 
-When AMBI is provided to authenticate traffic from
-this source IP, this domain name SHOULD be configured with a
-TXT field which contains a URI that can be used to securely
-fetch an anchor message that describes all the AMBI-
-authenticatable traffic from this source IP.
+The sender is the owner of the RR, and configures the zone so that it
+contains an RR that provides a URI that can provide secure delivery of the
+an anchor message appropriate to authenticate all the sender's multicast
+traffic.
 
-Other methods MAY be used to discover and transfer an anchor
-message. The description of alternate methods is out of scope
-for this document.
+This mechanism only works for source-specific multicast (SSM) channels.  The
+source address of the (S,G) is reversed and used as an index into one of the
+reverse mapping trees (in-addr.arpa for IPv4, as described in Section 3.5 of
+{{RFC1035}}, or ip6.arpa for IPv6, as described in Section 2.5 of {{RFC3596}}).
+
+When a middle box or receiver processes a join for a new source, if it is
+configured to perform authentication on SSM multicast channels it can
+forward, the middle box can discover a URI to obtain the anchor message by
+issuing a DNS request for the AMBI record of the reverse IP of the source of
+the (S,G), then fetch the contents of the resulting URI, validate it, and use
+it to authenticate traffic from the source.
 
 TBD: consider breaking up anchor message to avoid large, frequently
 changing anchors for sources with many groups.
@@ -257,6 +260,9 @@ TBD: consider graceful rollover for anchors, instead of synchronized
 update of anchor hash.
 
 ###Anchor Message YANG model {#anchor-yang}
+
+The anchor message is composed of a YANG instance object that validates
+against the YANG model below.
 
 ~~~~~~~~~~
 <CODE BEGINS> file "ietf-ambi-anchor.yang"
@@ -305,7 +311,7 @@ module ietf-ambi-anchor {
          (http://trustee.ietf.org/license-info).
 
          This version of this YANG module is part of
-         draft-jholland-mboned-ambi,
+         draft-jholland-mboned-ambi, [TBD: change]
          see the internet draft itself for full legal notices.";
 
     revision 2018-06-27 {
@@ -450,7 +456,7 @@ module ietf-ambi-anchor {
 
         list public_key {
             key id;
-            description "Public key for non-recursive manifest";
+            description "Public key for ALTI signatures.";
             leaf id {
                 type key-identifier;
                 mandatory true;
@@ -663,23 +669,19 @@ module ietf-ambi-anchor {
 
 ###Overview
 
-A manifest cannot be interpreted except in context of a
-known anchor message.
+A manifest cannot be interpreted except in context of a known anchor message.
 
-In order for a manifest to be considered as potentially
-authenticating a set of packets, the
-Anchor Version MUST match the value in a known unexpired
-anchor message, and the Anchor Hash MUST match the hash of the
-contents of that anchor message, according to the 
-/anchor/self/hash_algorithm and /anchor/self/hash_bits
-fields, in order for a manifest to be accepted for use as
-evidence of authenticity and integrity.
+In order for a manifest to be considered as potentially authenticating a set
+of packets, the Anchor Version MUST match the value in a known unexpired
+anchor message, and the Anchor Hash MUST match the hash of the contents of
+that anchor message, according to the /anchor/self/hash_algorithm and
+/anchor/self/hash_bits fields, in order for a manifest to be accepted for use
+as evidence of authenticity and integrity.
 
-A manifest also MUST NOT be accepted unless it has verified
-authenticity and integrity, either because it contains a
-cryptographic signature, or because it appeared in a secured
-unicast stream, or because another verified manifest has provided
-the packet hash for a packet containing this manifest.
+A manifest also MUST NOT be accepted unless it has verified authenticity and
+integrity, either because it contains a cryptographic signature, or because
+it appeared in a secured unicast stream, or because another verified manifest
+has provided the packet hash for a packet containing this manifest.
 
 ###Manifest Layout {#manifest-layout}
 
@@ -692,17 +694,11 @@ the packet hash for a packet containing this manifest.
 |   Anchor Hash (variable length, 4-octet aligned, 0-padded)    |
 |                             ...                               |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|            Key ID             |         Manifest ID           |
+|         Manifest ID           |       Packet Hash Count       |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |               First Packet Hash Identifier                    |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |             Packet Identifier Step (if S-bit set)             |
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|       Packet Hash Count       |                               |
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+                               |
-|                                                               |
-|            Cryptographic Signature (if Key ID nonzero)        |
-|                                                               |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |                                                               |
 |                      ... Packet Hashes ...                    |
@@ -710,105 +706,94 @@ the packet hash for a packet containing this manifest.
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ~~~
 
-####Ver (Protocol Version):
-  MUST be set to 0 by senders, and if a nonzero value is received
-  this message MUST NOT be accepted or processed as a manifest.
+####Ver (Protocol Version)
 
-  For manifests streams which were authenticated by a means other
-  than cryptographic signature, it is RECOMMENDED that authenticators
-  stop following this manifest stream and refresh the anchor if
-  they receive an invalid version.
+MUST be set to 0 by senders, and if a nonzero value is received this message
+MUST NOT be accepted or processed as a manifest.
 
-  For manifest streams authenticated by signature, it is
-  RECOMMENDED that authenticators remain joined to this stream
-  and ignore this packet, as the manifest MAY have been sent
-  maliciously.
+For manifests streams which were authenticated by a means other than
+cryptographic signature, it is RECOMMENDED that authenticators stop following
+this manifest stream and refresh the anchor if they receive an invalid
+version.
 
-  An authenticator MAY implement a rate limit on
-  invalid manifests and drop the stream if the rate is exceeded.
+For manifest streams authenticated by signature, it is RECOMMENDED that
+authenticators remain joined to this stream and ignore this packet, as the
+manifest MAY have been sent maliciously.
 
-####Reserved:
-  MUST be set to 0 by senders and MUST be ignored by receivers.
+An authenticator MAY implement a rate limit on invalid manifests and drop the
+stream if the rate is exceeded.
 
-####P ("Purge" bit):
-  If this bit is 1, the anchor message this manifest specifies
-  MUST be purged by authenticators who accept this manifest, so that
-  it cannot be used to authenticate future manifests unless it
-  was re-fetched.
+####Reserved
 
-####S ("Step" bit):
-  If this bit is 1, the "Packet Identifier Step" field is present
-  in this manifest, else it is not.
+MUST be set to 0 by senders and MUST be ignored by receivers.
 
-####Anchor Version:
-  The value from the "/anchor/self/version" field in the anchor
-  message. If no unexpired anchor message with this version is
-  known to the authenticator, this manifest MUST NOT be accepted.
+####P ("Purge" bit)
 
-####Anchor Hash:
-  The hash of the anchor message, using the algorithm indicated by the
-  "/anchor/self/hash_algorithm" field, using the first bits from the
-  hash up to the number of bits indicated by the
-  "/anchor/self/hash_bits" field in the anchor message.
+If this bit is 1, the anchor message this manifest specifies MUST be purged
+by authenticators who accept this manifest, so that it cannot be used to
+authenticate future manifests unless it was re-fetched.
 
-  If the hash of an anchor message with this version does not match the bits
-  in this field, this manifest MUST NOT be accepted.
+####S ("Step" bit)
 
-  This field is padded at the end with 0-bits until the end is 4-octet aligned.
+If this bit is 1, the "Packet Identifier Step" field is present in this
+manifest, else it is not.
 
-####Key ID:
-  If this is 0, this manifest does not contain the "Cryptographic Signature"
-  field.
+####Anchor Version
 
-  If this is nonzero, it is interpreted as an unsigned 16-bit integer,
-  and the manifest MUST NOT be accepted unless the "Cryptographic Signature"
-  field contains a signature corresponding to the information from the
-  "/anchor/public_key" object in the anchor message with an id field matching
-  this value.
+The value from the "/anchor/self/version" field in the anchor message. If no
+unexpired anchor message with this version is known to the authenticator,
+this manifest MUST NOT be accepted.
 
-####Manifest ID:
-  The value from "/anchor/manifest_stream/id" in the anchor message
-  corresponding to the manifest stream this manifest is a part of.
+####Anchor Hash
 
-####First Packet Hash Identifier:
-  The packet number corresponding to the first packet hash that's contained
-  in this manifest. This refers to a value in a data packet described by
-  the "/anchor/manifest_stream/sequence_type" field for this manifest
-  stream.
+The hash of the anchor message, using the algorithm indicated by the
+"/anchor/self/hash_algorithm" field, using the first bits from the hash up to
+the number of bits indicated by the "/anchor/self/hash_bits" field in the
+anchor message.
 
-####Packet Identifier Step:
-  If the "S bit" is 0, this field is not present in the manifest.
+If the hash of an anchor message with this version does not match the bits
+in this field, this manifest MUST NOT be accepted.
 
-  If the "S bit" is 1, this field is repeatedly added to the First Packet
-  Hash Identifier using 32-bit signed arithmetic to determine the packet
-  number of subsequent hashes.
+This field is padded at the end with 0-bits until the end is 4-octet aligned.
 
-####Packet Hash Count:
-  The number of hashes contained in the Packet Hashes section.
+####Manifest ID
 
-####Cryptographic Signature:
-  If the "Key ID" field is 0, this field is not present.
+The value from "/anchor/manifest_stream/id" in the anchor message
+corresponding to the manifest stream this manifest is a part of.
 
-  If the "Key ID" field is nonzero, this manifest MUST NOT be accepted
-  unless this field contains the correct signature produced by signing the
-  manifest with the private key that can be verified by the "/anchor/public_key"
-  object in the anchor message, according to the algorithm specified in the
-  "algorithm" field with an "id" field equal to the "Key ID" field of this
-  manifest, with length equal to the "signature_bits" field, padded at
-  the end with 0 until 4-octet aligned.
+####First Packet Hash Identifier
 
-####Packet Hashes:
-  Concatenated Hashes of the data packets authenticated by this manifest. The hash
-  covers the IP payload of the packet, it is calculated with the algorithm
-  indicated by the "/anchor/manifest_stream" object from the anchor message,
-  with an "id" field matching the "Manifest ID" field, with the algorithm and
-  number of bits equal to the "hash_algorithm" and "hash_bits"field from that
-  object. The hashes are concatenated without padding, except the last octet
-  is padded with 0 if necessary.
+The packet number corresponding to the first packet hash that's contained in
+this manifest. This refers to a value in a data packet described by the
+"/anchor/manifest_stream/sequence_type" field for this manifest stream.
+
+####Packet Identifier Step
+
+If the "S bit" is 0, this field is not present in the manifest.
+
+If the "S bit" is 1, this field is repeatedly added to the First Packet Hash
+Identifier using 32-bit signed arithmetic to determine the packet number of
+subsequent hashes.
+
+####Packet Hash Count
+
+The number of hashes contained in the Packet Hashes section.
+
+####Packet Hashes
+
+Concatenated Hashes of the data packets authenticated by this manifest. The
+hash covers the IP payload of the packet, it is calculated with the algorithm
+indicated by the "/anchor/manifest_stream" object from the anchor message,
+with an "id" field matching the "Manifest ID" field, with the algorithm and
+number of bits equal to the "hash_algorithm" and "hash_bits"field from that
+object. The hashes are concatenated without padding, except the last octet is
+padded with 0 if necessary.
 
 #IANA Considerations {#iana}
 
-TBD1: Request a "Specification Required" registry for Packet identifier methods, from https://tools.ietf.org/html/rfc5226#section-4.1 . Reserve anything beginning with "experimental:"?
+TBD1: Request a "Specification Required" registry for Packet identifier
+methods, from https://tools.ietf.org/html/rfc5226#section-4.1 . Reserve
+anything beginning with "experimental:"?
 
 TBD2: Add a new entry to the "UDP Option Kind" numbers registry:
 https://tools.ietf.org/html/draft-ietf-tsvwg-udp-options-02#section-14
@@ -816,6 +801,9 @@ https://tools.ietf.org/html/draft-ietf-tsvwg-udp-options-02#section-14
 TBD: check guidelines in https://tools.ietf.org/html/rfc5226 and remove this paragraph
 
 Example from: https://tools.ietf.org/html/rfc5226#section-5.1
+
+TBD: new Resource Record type with a URI in the RRData?  Or should this be
+done as a NAPTR + URI chain?
 
 [TO BE REMOVED: 
 Please add the yang model in {{anchor-yang}} to:
